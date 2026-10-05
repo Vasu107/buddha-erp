@@ -13,6 +13,17 @@ export interface ApiResponse<T = any> {
   faculty?: any[];
   stats?: any;
   count?: number;
+  attendance?: any[];
+  summary?: any[];
+  totals?: any;
+  subjects?: any[];
+  overall?: number;
+  totalClasses?: number;
+  totalAttended?: number;
+  department?: string;
+  criticalCount?: number;
+  warningCount?: number;
+  student?: any;
 }
 
 export async function apiFetch<T = any>(
@@ -76,7 +87,6 @@ export const api = {
     create: (data: any) => apiFetch("/students", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       apiFetch(`/students/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) => apiFetch(`/students/${id}`, { method: "DELETE" }),
   },
   faculty: {
     getAll: (params?: { department?: string; designation?: string; status?: string; search?: string }) => {
@@ -88,6 +98,40 @@ export const api = {
       const qs = q.toString();
       return apiFetch(`/faculty${qs ? `?${qs}` : ""}`);
     },
+    getMyStudents: (params?: { department?: string; branch?: string; year?: string; section?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.branch) q.set("branch", params.branch);
+      if (params?.year) q.set("year", params.year);
+      if (params?.section) q.set("section", params.section);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/roles/faculty/students${qs ? `?${qs}` : ""}`);
+    },
+    getAttendance: (params?: { date?: string; subjectId?: string; timeSlot?: string; studentId?: string; section?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.date) q.set("date", params.date);
+      if (params?.subjectId) q.set("subjectId", params.subjectId);
+      if (params?.timeSlot) q.set("timeSlot", params.timeSlot);
+      if (params?.studentId) q.set("studentId", params.studentId);
+      if (params?.section) q.set("section", params.section);
+      const qs = q.toString();
+      return apiFetch(`/roles/faculty/attendance${qs ? `?${qs}` : ""}`);
+    },
+    getAttendanceSummary: (params?: { subjectId?: string; branch?: string; section?: string; fromDate?: string; toDate?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.subjectId) q.set("subjectId", params.subjectId);
+      if (params?.branch) q.set("branch", params.branch);
+      if (params?.section) q.set("section", params.section);
+      if (params?.fromDate) q.set("fromDate", params.fromDate);
+      if (params?.toDate) q.set("toDate", params.toDate);
+      const qs = q.toString();
+      return apiFetch(`/roles/faculty/attendance/summary${qs ? `?${qs}` : ""}`);
+    },
+    saveBulkAttendance: (data: { date: string; subjectId?: string; timeSlot?: string; branch?: string; department?: string; section?: string; records: { studentId: string; status: "PRESENT" | "ABSENT" }[] }) =>
+      apiFetch("/roles/faculty/attendance/bulk", { method: "POST", body: JSON.stringify(data) }),
+    submitAttendance: (data: { date: string; subjectId?: string; timeSlot?: string; branch?: string; department?: string; section?: string }) =>
+      apiFetch("/roles/faculty/attendance/submit", { method: "POST", body: JSON.stringify(data) }),
     create: (data: any) => apiFetch("/faculty", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: any) =>
       apiFetch(`/faculty/${id}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -96,6 +140,30 @@ export const api = {
   hods: {
     getAll: () => apiFetch("/hods"),
     create: (data: any) => apiFetch("/hods", { method: "POST", body: JSON.stringify(data) }),
+    getAttendance: (params?: { branch?: string; section?: string; year?: string; date?: string; status?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.branch) q.set("branch", params.branch);
+      if (params?.section) q.set("section", params.section);
+      if (params?.year) q.set("year", params.year);
+      if (params?.date) q.set("date", params.date);
+      if (params?.status) q.set("status", params.status);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/roles/hod/attendance${qs ? `?${qs}` : ""}`);
+    },
+    getAttendanceSummary: (params?: { section?: string; year?: string; status?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.section) q.set("section", params.section);
+      if (params?.year) q.set("year", params.year);
+      if (params?.status) q.set("status", params.status);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/roles/hod/attendance/summary${qs ? `?${qs}` : ""}`);
+    },
+  },
+  studentRole: {
+    getAttendance: () => apiFetch("/roles/student/attendance"),
+    getAttendanceSummary: () => apiFetch("/roles/student/attendance/summary"),
   },
   director: {
     getStats: () => apiFetch("/director/stats"),
@@ -132,5 +200,31 @@ export const api = {
       apiFetch(`/director/faculty/${id}`, { method: "PUT", body: JSON.stringify(data) }),
     deleteFaculty: (id: string) =>
       apiFetch(`/director/faculty/${id}`, { method: "DELETE" }),
+    getAttendance: (params?: { department?: string; branch?: string; section?: string; date?: string; fromDate?: string; toDate?: string; year?: string; status?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.branch) q.set("branch", params.branch);
+      if (params?.section) q.set("section", params.section);
+      if (params?.date) q.set("date", params.date);
+      if (params?.fromDate) q.set("fromDate", params.fromDate);
+      if (params?.toDate) q.set("toDate", params.toDate);
+      if (params?.year) q.set("year", params.year);
+      if (params?.status) q.set("status", params.status);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/roles/director/attendance${qs ? `?${qs}` : ""}`);
+    },
+    getAttendanceSummary: (params?: { department?: string; branch?: string; section?: string; date?: string; fromDate?: string; toDate?: string; year?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.branch) q.set("branch", params.branch);
+      if (params?.section) q.set("section", params.section);
+      if (params?.date) q.set("date", params.date);
+      if (params?.fromDate) q.set("fromDate", params.fromDate);
+      if (params?.toDate) q.set("toDate", params.toDate);
+      if (params?.year) q.set("year", params.year);
+      const qs = q.toString();
+      return apiFetch(`/roles/director/attendance/summary${qs ? `?${qs}` : ""}`);
+    },
   },
 };

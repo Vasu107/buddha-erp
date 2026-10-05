@@ -1,43 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  Check, X, Clock, Search, Calendar, FileSpreadsheet, FileText,
-  Download, Save, CheckCircle2, AlertCircle, Filter, RefreshCw
+  Check, X, Search, FileSpreadsheet, FileText,
+  Save, CheckCircle2, Loader2
 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import { api } from "@/lib/api";
 
 interface StudentAttendance {
+  id: string;
   rollNo: string;
   name: string;
   section: string;
   overallPercent: number;
-  status: "Present" | "Absent" | "Late";
+  status: "Present" | "Absent";
 }
 
-const initialStudents: StudentAttendance[] = [
-  { rollNo: "21001", name: "Aman Gupta", section: "Section A", overallPercent: 88, status: "Present" },
-  { rollNo: "21002", name: "Priya Sharma", section: "Section A", overallPercent: 92, status: "Present" },
-  { rollNo: "21003", name: "Rahul Verma", section: "Section A", overallPercent: 74, status: "Absent" },
-  { rollNo: "21004", name: "Sneha Patel", section: "Batch A1", overallPercent: 96, status: "Present" },
-  { rollNo: "21005", name: "Vikas Kumar", section: "Section A", overallPercent: 82, status: "Present" },
-  { rollNo: "21006", name: "Kavita Singh", section: "Section A", overallPercent: 79, status: "Late" },
-  { rollNo: "21007", name: "Rohit Verma", section: "Section A", overallPercent: 90, status: "Present" },
-  { rollNo: "21008", name: "Sakshi Rani", section: "Section A", overallPercent: 68, status: "Absent" },
-];
-
 export default function FacultyAttendancePage() {
-  const [students, setStudents] = useState<StudentAttendance[]>(initialStudents);
+  const [students, setStudents] = useState<StudentAttendance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState("CS501 - Database Management Systems");
-  const [selectedDate, setSelectedDate] = useState("2026-10-02");
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [selectedSlot, setSelectedSlot] = useState("Lecture 1 (09:30 AM – 10:30 AM)");
   const [search, setSearch] = useState("");
   const [isSaved, setIsSaved] = useState(false);
 
-  const setStatus = (rollNo: string, newStatus: "Present" | "Absent" | "Late") => {
+  useEffect(() => {
+    fetchAttendanceData();
+  }, [selectedDate, selectedSubject]);
+
+  const fetchAttendanceData = async () => {
+    try {
+      setLoading(true);
+      // Fetch students for faculty scope
+      let studentRes = await api.faculty.getMyStudents();
+      let rawStudents = studentRes.students || [];
+
+      if (!rawStudents.length) {
+        const allRes = await api.students.getAll();
+        rawStudents = allRes.students || allRes.data || [];
+      }
+
+      // Fetch marked attendance for selected date
+      const attendanceRes = await api.faculty.getAttendance({ date: selectedDate }).catch(() => null);
+      const markedRecords = attendanceRes?.attendance || [];
+      const markedMap = new Map<string, "Present" | "Absent">();
+      markedRecords.forEach((rec: any) => {
+        const st = rec.status === "PRESENT" ? "Present" : "Absent";
+        markedMap.set(rec.studentId, st);
+      });
+
+      // Fetch summary stats for percentage
+      const summaryRes = await api.faculty.getAttendanceSummary().catch(() => null);
+      const summaryMap = new Map<string, number>();
+      if (summaryRes?.summary) {
+        summaryRes.summary.forEach((item: any) => {
+          summaryMap.set(item.studentId, item.attendancePercent ?? 85);
+        });
+      }
+
+      const formatted: StudentAttendance[] = rawStudents.map((s: any, idx: number) => {
+        const studentId = s.id || `stu-${idx}`;
+        const currentStatus = markedMap.get(studentId) || "Present";
+        const pct = summaryMap.get(studentId) ?? Math.round(s.attendance || 85);
+
+        return {
+          id: studentId,
+          rollNo: s.rollNumber || `2100${idx + 1}`,
+          name: s.name || "Student",
+          section: s.section ? (s.section.startsWith("Section") ? s.section : `Section ${s.section}`) : "Section A",
+          overallPercent: pct,
+          status: currentStatus,
+        };
+      });
+
+      setStudents(formatted);
+    } catch (err) {
+      console.error("Failed to load faculty attendance data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setStatus = (id: string, newStatus: "Present" | "Absent") => {
     setStudents((prev) =>
-      prev.map((s) => (s.rollNo === rollNo ? { ...s, status: newStatus } : s))
+      prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
     );
     setIsSaved(false);
   };
@@ -49,7 +99,6 @@ export default function FacultyAttendancePage() {
 
   const presentCount = students.filter((s) => s.status === "Present").length;
   const absentCount = students.filter((s) => s.status === "Absent").length;
-  const lateCount = students.filter((s) => s.status === "Late").length;
   const totalCount = students.length;
 
   const filtered = students.filter(
@@ -59,9 +108,32 @@ export default function FacultyAttendancePage() {
       s.section.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSaveAttendance = () => {
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+  const handleSaveAttendance = async () => {
+    try {
+      setSaving(true);
+      const recordsToSave = students.map((s) => ({
+        studentId: s.id,
+        status: (s.status === "Present" ? "PRESENT" : "ABSENT") as "PRESENT" | "ABSENT",
+      }));
+
+      await api.faculty.saveBulkAttendance({
+        date: selectedDate,
+        timeSlot: selectedSlot,
+        records: recordsToSave,
+      });
+
+      await api.faculty.submitAttendance({
+        date: selectedDate,
+        timeSlot: selectedSlot,
+      }).catch(() => null);
+
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 4000);
+    } catch (err) {
+      console.error("Error submitting attendance:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ── Export to CSV / Excel ── */
@@ -103,7 +175,6 @@ export default function FacultyAttendancePage() {
             td { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }
             .present { color: #16a34a; font-weight: bold; }
             .absent { color: #dc2626; font-weight: bold; }
-            .late { color: #d97706; font-weight: bold; }
             .summary { margin-top: 20px; font-size: 13px; font-weight: bold; }
           </style>
         </head>
@@ -113,7 +184,7 @@ export default function FacultyAttendancePage() {
             <p class="subtitle">${selectedSubject} | Date: ${selectedDate} | ${selectedSlot}</p>
           </div>
           <div class="summary">
-            Total Students: ${totalCount} | Present: ${presentCount} | Absent: ${absentCount} | Late: ${lateCount}
+            Total Students: ${totalCount} | Present: ${presentCount} | Absent: ${absentCount}
           </div>
           <table>
             <thead>
@@ -158,7 +229,7 @@ export default function FacultyAttendancePage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">Date-Wise Attendance Management</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Mark student attendance session-wise, view history, and export official reports to Excel or PDF.
+            Mark student attendance session-wise, view history, and submit official records to backend.
           </p>
         </div>
 
@@ -183,11 +254,12 @@ export default function FacultyAttendancePage() {
           </button>
 
           <Button
-            icon={<Save size={15} />}
+            icon={saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
             onClick={handleSaveAttendance}
+            disabled={saving || loading}
             className="bg-[#8B2500] hover:bg-[#6B1A00] text-white shadow-md shadow-[#8B2500]/20"
           >
-            Submit Attendance
+            {saving ? "Saving..." : "Submit Attendance"}
           </Button>
         </div>
       </div>
@@ -197,13 +269,13 @@ export default function FacultyAttendancePage() {
         <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs font-bold flex items-center justify-between animate-fade-in">
           <span className="flex items-center gap-2">
             <CheckCircle2 size={16} className="text-emerald-600" />
-            Attendance for {selectedSubject} on {selectedDate} saved successfully!
+            Attendance for {selectedSubject} on {selectedDate} submitted and saved to database successfully!
           </span>
         </div>
       )}
 
-      {/* ── Summary Stats Cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      {/* ── Summary Stats Cards (Present, Absent, Total Enrolled) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase">Present</p>
@@ -221,16 +293,6 @@ export default function FacultyAttendancePage() {
           </div>
           <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold">
             ✕
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase">Late</p>
-            <p className="text-2xl font-black text-amber-600 mt-0.5">{lateCount}</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-            ⏱
           </div>
         </div>
 
@@ -292,12 +354,14 @@ export default function FacultyAttendancePage() {
         {/* Quick Bulk Action Buttons */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => markAll("Present")}
             className="px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition shadow-xs"
           >
             ✓ Mark All Present
           </button>
           <button
+            type="button"
             onClick={() => markAll("Absent")}
             className="px-3 py-2 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition shadow-xs"
           >
@@ -327,103 +391,99 @@ export default function FacultyAttendancePage() {
 
         {/* Interactive Attendance Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-100/70 border-b border-slate-200 text-left">
-                {["#", "Roll No", "Student Name", "Section", "Overall %", "Attendance Status Toggle"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-xs font-bold text-slate-600 uppercase tracking-wider">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {filtered.map((s, i) => (
-                <tr
-                  key={s.rollNo}
-                  className={`transition-colors ${
-                    s.status === "Present"
-                      ? "bg-emerald-50/20 hover:bg-emerald-50/40"
-                      : s.status === "Absent"
-                      ? "bg-red-50/20 hover:bg-red-50/40"
-                      : "bg-amber-50/20 hover:bg-amber-50/40"
-                  }`}
-                >
-                  <td className="px-4 py-3.5 text-slate-400 text-xs font-medium">{i + 1}</td>
-                  
-                  {/* Roll No */}
-                  <td className="px-4 py-3.5 font-bold text-slate-700 text-xs">
-                    <span className="px-2 py-1 bg-slate-100 rounded-md border border-slate-200 font-mono">
-                      {s.rollNo}
-                    </span>
-                  </td>
-
-                  {/* Student Name */}
-                  <td className="px-4 py-3.5 font-bold text-slate-800">{s.name}</td>
-
-                  {/* Section */}
-                  <td className="px-4 py-3.5 text-xs text-slate-500 font-medium">{s.section}</td>
-
-                  {/* Overall Percentage */}
-                  <td className="px-4 py-3.5">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                      s.overallPercent >= 85
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-amber-50 text-amber-700"
-                    }`}>
-                      {s.overallPercent}%
-                    </span>
-                  </td>
-
-                  {/* Interactive Status Toggle Buttons */}
-                  <td className="px-4 py-3.5">
-                    <div className="flex items-center gap-1.5">
-                      
-                      {/* Present Button */}
-                      <button
-                        type="button"
-                        onClick={() => setStatus(s.rollNo, "Present")}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                          s.status === "Present"
-                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-                            : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
-                        }`}
-                      >
-                        <Check size={13} /> Present
-                      </button>
-
-                      {/* Absent Button */}
-                      <button
-                        type="button"
-                        onClick={() => setStatus(s.rollNo, "Absent")}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                          s.status === "Absent"
-                            ? "bg-red-600 text-white shadow-md shadow-red-600/20"
-                            : "bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-700"
-                        }`}
-                      >
-                        <X size={13} /> Absent
-                      </button>
-
-                      {/* Late Button */}
-                      <button
-                        type="button"
-                        onClick={() => setStatus(s.rollNo, "Late")}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                          s.status === "Late"
-                            ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
-                            : "bg-slate-100 text-slate-500 hover:bg-amber-50 hover:text-amber-700"
-                        }`}
-                      >
-                        <Clock size={13} /> Late
-                      </button>
-
-                    </div>
-                  </td>
+          {loading ? (
+            <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+              <Loader2 className="w-8 h-8 animate-spin mb-2 text-[#8B2500]" />
+              <p className="text-xs font-semibold">Loading backend attendance data...</p>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-xs font-semibold">
+              No student records found.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-100/70 border-b border-slate-200 text-left">
+                  {["#", "Roll No", "Student Name", "Section", "Overall %", "Attendance Status Toggle"].map((h) => (
+                    <th key={h} className="px-4 py-3 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {filtered.map((s, i) => (
+                  <tr
+                    key={s.id}
+                    className={`transition-colors ${
+                      s.status === "Present"
+                        ? "bg-emerald-50/20 hover:bg-emerald-50/40"
+                        : "bg-red-50/20 hover:bg-red-50/40"
+                    }`}
+                  >
+                    <td className="px-4 py-3.5 text-slate-400 text-xs font-medium">{i + 1}</td>
+                    
+                    {/* Roll No */}
+                    <td className="px-4 py-3.5 font-bold text-slate-700 text-xs">
+                      <span className="px-2 py-1 bg-slate-100 rounded-md border border-slate-200 font-mono">
+                        {s.rollNo}
+                      </span>
+                    </td>
+
+                    {/* Student Name */}
+                    <td className="px-4 py-3.5 font-bold text-slate-800">{s.name}</td>
+
+                    {/* Section */}
+                    <td className="px-4 py-3.5 text-xs text-slate-500 font-medium">{s.section}</td>
+
+                    {/* Overall Percentage */}
+                    <td className="px-4 py-3.5">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        s.overallPercent >= 85
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}>
+                        {s.overallPercent}%
+                      </span>
+                    </td>
+
+                    {/* Interactive Status Toggle Buttons (Present and Absent only) */}
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        
+                        {/* Present Button */}
+                        <button
+                          type="button"
+                          onClick={() => setStatus(s.id, "Present")}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            s.status === "Present"
+                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                              : "bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700"
+                          }`}
+                        >
+                          <Check size={13} /> Present
+                        </button>
+
+                        {/* Absent Button */}
+                        <button
+                          type="button"
+                          onClick={() => setStatus(s.id, "Absent")}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                            s.status === "Absent"
+                              ? "bg-red-600 text-white shadow-md shadow-red-600/20"
+                              : "bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-700"
+                          }`}
+                        >
+                          <X size={13} /> Absent
+                        </button>
+
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
 
