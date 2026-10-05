@@ -9,6 +9,10 @@ export interface ApiResponse<T = any> {
   token?: string;
   error?: string;
   errors?: any[];
+  students?: any[];
+  faculty?: any[];
+  stats?: any;
+  count?: number;
 }
 
 export async function apiFetch<T = any>(
@@ -61,15 +65,72 @@ export const api = {
     delete: (id: string) => apiFetch(`/users/${id}`, { method: "DELETE" }),
   },
   students: {
-    getAll: () => apiFetch("/students"),
+    getAll: (params?: { department?: string; year?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.year) q.set("year", params.year);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/students${qs ? `?${qs}` : ""}`);
+    },
     create: (data: any) => apiFetch("/students", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      apiFetch(`/students/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch(`/students/${id}`, { method: "DELETE" }),
   },
   faculty: {
-    getAll: () => apiFetch("/faculty"),
+    getAll: (params?: { department?: string; designation?: string; status?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.designation) q.set("designation", params.designation);
+      if (params?.status) q.set("status", params.status);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/faculty${qs ? `?${qs}` : ""}`);
+    },
     create: (data: any) => apiFetch("/faculty", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      apiFetch(`/faculty/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    delete: (id: string) => apiFetch(`/faculty/${id}`, { method: "DELETE" }),
   },
   hods: {
     getAll: () => apiFetch("/hods"),
     create: (data: any) => apiFetch("/hods", { method: "POST", body: JSON.stringify(data) }),
+  },
+  director: {
+    getStats: () => apiFetch("/director/stats"),
+    getProfile: () => apiFetch("/director/profile"),
+    updateProfile: (data: { name?: string; employeeId?: string }) =>
+      apiFetch("/director/profile", { method: "PUT", body: JSON.stringify(data) }),
+    // director-scoped student/faculty (go through /director prefix)
+    getStudents: (params?: { department?: string; year?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.year) q.set("year", params.year);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/director/students${qs ? `?${qs}` : ""}`);
+    },
+    createStudent: (data: any) =>
+      apiFetch("/director/students", { method: "POST", body: JSON.stringify(data) }),
+    updateStudent: (id: string, data: any) =>
+      apiFetch(`/director/students/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    deleteStudent: (id: string) =>
+      apiFetch(`/director/students/${id}`, { method: "DELETE" }),
+    getFaculty: (params?: { department?: string; designation?: string; status?: string; search?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.department) q.set("department", params.department);
+      if (params?.designation) q.set("designation", params.designation);
+      if (params?.status) q.set("status", params.status);
+      if (params?.search) q.set("search", params.search);
+      const qs = q.toString();
+      return apiFetch(`/director/faculty${qs ? `?${qs}` : ""}`);
+    },
+    createFaculty: (data: any) =>
+      apiFetch("/director/faculty", { method: "POST", body: JSON.stringify(data) }),
+    updateFaculty: (id: string, data: any) =>
+      apiFetch(`/director/faculty/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    deleteFaculty: (id: string) =>
+      apiFetch(`/director/faculty/${id}`, { method: "DELETE" }),
   },
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import AppSidebar from "./AppSidebar";
 import TopNavbar from "./TopNavbar";
 import { directorNav, hodNav, facultyNav, studentNav } from "@/config/navigation";
@@ -15,10 +16,10 @@ const navMap: Record<Role, typeof directorNav> = {
 };
 
 const defaultUserMap: Record<Role, { name: string; designation: string; email: string }> = {
-  director: { name: "Dr. A. Verma", designation: "Director", email: "director@bit.ac.in" },
-  hod:      { name: "Dr. R. Sharma", designation: "Head of Department", email: "hod@bit.ac.in" },
-  faculty:  { name: "Prof. S. Gupta", designation: "Assistant Professor", email: "faculty@bit.ac.in" },
-  student:  { name: "Rahul Kumar", designation: "B.Tech — CSE, Sem 3", email: "student@bit.ac.in" },
+  director: { name: "Dr. A. Verma",   designation: "Director",           email: "director@bit.ac.in" },
+  hod:      { name: "Dr. R. Sharma",  designation: "Head of Department", email: "hod@bit.ac.in" },
+  faculty:  { name: "Prof. S. Gupta", designation: "Assistant Professor",email: "faculty@bit.ac.in" },
+  student:  { name: "Rahul Kumar",    designation: "B.Tech — CSE, Sem 3",email: "student@bit.ac.in" },
 };
 
 interface DashboardLayoutProps {
@@ -30,10 +31,20 @@ export default function DashboardLayout({
   children,
   role = "director",
 }: DashboardLayoutProps) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState(defaultUserMap[role]);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    // ── Auth guard ────────────────────────────────────────────
+    const token = localStorage.getItem("bit_token");
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+
+    // ── Hydrate user from localStorage ────────────────────────
     try {
       const stored = localStorage.getItem("bit_user");
       if (stored) {
@@ -46,10 +57,21 @@ export default function DashboardLayout({
           });
         }
       }
-    } catch (e) {
+    } catch {
       // fallback to defaults
     }
-  }, [role]);
+
+    setAuthChecked(true);
+  }, [role, router]);
+
+  // Don't render children until auth is confirmed
+  if (!authChecked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#f5f5f5]">
+        <div className="w-8 h-8 border-4 border-[#8B2500]/20 border-t-[#8B2500] rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f5f5]">
