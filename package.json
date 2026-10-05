@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "eslint"
   },
+  "allowScripts": {
+    "esbuild": true
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-table": "^9.2.4",
